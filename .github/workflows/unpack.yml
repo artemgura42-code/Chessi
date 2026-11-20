@@ -1,0 +1,66 @@
+
+name: Unpack ZIP into repository
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find ZIP archive
+        id: archive
+        shell: bash
+        run: |
+          mapfile -t FILES < <(find . -maxdepth 1 -type f -iname '*.zip')
+
+          if [ "${#FILES[@]}" -ne 1 ]; then
+            echo "ERROR: Expected exactly one ZIP in repository root."
+            exit 1
+          fi
+
+          echo "zip=${FILES[0]#./}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract project
+        env:
+          ZIP_FILE: ${{ steps.archive.outputs.zip }}
+        run: |
+          PROJECT_DIR="ImportedProject"
+
+          rm -rf "$PROJECT_DIR"
+          mkdir -p "$PROJECT_DIR"
+
+          unzip -q "$ZIP_FILE" -d "$PROJECT_DIR"
+
+          echo "Project extracted successfully"
+
+      - name: Remove ZIP archive
+        env:
+          ZIP_FILE: ${{ steps.archive.outputs.zip }}
+        run: rm -f "$ZIP_FILE"
+
+      - name: Save files to GitHub
+        env:
+          ZIP_FILE: ${{ steps.archive.outputs.zip }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A -- ImportedProject "$ZIP_FILE"
+
+          if git diff --cached --quiet; then
+            echo "No changes to save"
+            exit 0
+          fi
+
+          git commit -m "Extract project from ZIP"
+          git push
